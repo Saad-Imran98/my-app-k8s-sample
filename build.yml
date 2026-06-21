@@ -1,0 +1,38 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set short SHA
+        id: vars
+        run: echo "sha_short=$(echo ${{ gitea.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Gitea registry
+        run: |
+          echo "${{ secrets.GITEA_TOKEN }}" | docker login gitea.145.241.233.188.nip.io -u admin --password-stdin
+
+      - name: Build and push image
+        run: |
+          IMAGE=gitea.145.241.233.188.nip.io/admin/myapp:${{ steps.vars.outputs.sha_short }}
+          docker build -t $IMAGE .
+          docker push $IMAGE
+          docker tag $IMAGE gitea.145.241.233.188.nip.io/admin/myapp:latest
+          docker push gitea.145.241.233.188.nip.io/admin/myapp:latest
+
+      - name: Bump tag in config repo
+        run: |
+          git clone http://admin:${{ secrets.GITEA_TOKEN }}@gitea.145.241.233.188.nip.io/admin/myapp-config.git
+          cd myapp-config
+          sed -i "s/tag:.*/tag: \"${{ steps.vars.outputs.sha_short }}\"/" values.yaml
+          git config user.email "ci@gitea.local"
+          git config user.name "Gitea CI"
+          git commit -am "Bump myapp image to ${{ steps.vars.outputs.sha_short }}" || echo "No changes to commit"
+          git push
